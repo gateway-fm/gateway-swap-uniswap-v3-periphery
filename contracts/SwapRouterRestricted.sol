@@ -19,7 +19,7 @@ import './interfaces/external/IWETH9.sol';
 
 /// @title Uniswap V3 Swap Router
 /// @notice Router for stateless execution of swaps against Uniswap V3
-contract SwapRouter is
+contract SwapRouterRestricted is
     ISwapRouter,
     PeripheryImmutableState,
     PeripheryValidation,
@@ -37,7 +37,17 @@ contract SwapRouter is
     /// @dev Transient storage variable used for returning the computed amount in for an exact output swap.
     uint256 private amountInCached = DEFAULT_AMOUNT_IN_CACHED;
 
-    constructor(address _factory, address _WETH9) PeripheryImmutableState(_factory, _WETH9) {}
+    /// @dev SwapConnector address. Only SwapConnector approved to operate over SwapRouter
+    address public immutable swapConnector;
+
+    constructor(address _factory, address _WETH9, address swapConnector_) PeripheryImmutableState(_factory, _WETH9) {
+        swapConnector = swapConnector_;
+    }
+
+    modifier onlySwapConnector() {
+        require(msg.sender == swapConnector, 'unauthorized');
+        _;
+    }
 
     /// @dev Returns the pool for the given token pair and fee. The pool contract may or may not exist.
     function getPool(address tokenA, address tokenB, uint24 fee) private view returns (IUniswapV3Pool) {
@@ -104,7 +114,7 @@ contract SwapRouter is
     /// @inheritdoc ISwapRouter
     function exactInputSingle(
         ExactInputSingleParams calldata params
-    ) external payable override checkDeadline(params.deadline) returns (uint256 amountOut) {
+    ) external payable override checkDeadline(params.deadline) onlySwapConnector returns (uint256 amountOut) {
         amountOut = exactInputInternal(
             params.amountIn,
             params.recipient,
@@ -117,7 +127,7 @@ contract SwapRouter is
     /// @inheritdoc ISwapRouter
     function exactInput(
         ExactInputParams memory params
-    ) external payable override checkDeadline(params.deadline) returns (uint256 amountOut) {
+    ) external payable override checkDeadline(params.deadline) onlySwapConnector returns (uint256 amountOut) {
         address payer = msg.sender; // msg.sender pays for the first hop
 
         while (true) {
@@ -183,7 +193,7 @@ contract SwapRouter is
     /// @inheritdoc ISwapRouter
     function exactOutputSingle(
         ExactOutputSingleParams calldata params
-    ) external payable override checkDeadline(params.deadline) returns (uint256 amountIn) {
+    ) external payable override checkDeadline(params.deadline) onlySwapConnector returns (uint256 amountIn) {
         // avoid an SLOAD by using the swap return data
         amountIn = exactOutputInternal(
             params.amountOut,
@@ -200,7 +210,7 @@ contract SwapRouter is
     /// @inheritdoc ISwapRouter
     function exactOutput(
         ExactOutputParams calldata params
-    ) external payable override checkDeadline(params.deadline) returns (uint256 amountIn) {
+    ) external payable override checkDeadline(params.deadline) onlySwapConnector returns (uint256 amountIn) {
         // it's okay that the payer is fixed to msg.sender here, as they're only paying for the "final" exact output
         // swap, which happens first, and subsequent swaps are paid for within nested callback frames
         exactOutputInternal(
